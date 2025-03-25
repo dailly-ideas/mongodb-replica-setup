@@ -1,0 +1,78 @@
+version: "3.8"
+
+services:
+  mongo1:
+    build:
+      context: .
+      dockerfile: mongodb/Dockerfile
+    ports:
+      - "30000:27017" # Primary
+    volumes:
+      - ./.data/mongo1:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=Admin123
+    restart: always
+    networks:
+      - mongo-net
+    command: mongod --replSet rs0 --auth --keyFile /etc/mongodb.keyfile --bind_ip_all
+
+  mongo2:
+    build:
+      context: .
+      dockerfile: mongodb/Dockerfile
+    ports:
+      - "30001:27017" # Secondary
+    volumes:
+      - ./.data/mongo2:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=Admin123
+    restart: always
+    networks:
+      - mongo-net
+    command: mongod --replSet rs0 --auth --keyFile /etc/mongodb.keyfile --bind_ip_all
+
+  mongo3:
+    build:
+      context: .
+      dockerfile: mongodb/Dockerfile
+    ports:
+      - "30002:27017" # Secondary
+    volumes:
+      - ./.data/mongo3:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=Admin123
+    restart: always
+    networks:
+      - mongo-net
+    command: mongod --replSet rs0 --auth --keyFile /etc/mongodb.keyfile --bind_ip_all
+
+  mongo-init:
+    image: mongo:7.0
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    networks:
+      - mongo-net
+    entrypoint: >
+      bash -c "
+      echo 'Waiting 20s for MongoDB nodes to start...' &&
+      sleep 20 &&
+      mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --eval '
+        rs.initiate({
+          _id: \"rs0\",
+          members: [
+            { _id: 0, host: \"mongo1:30000\", priority: 10 },
+            { _id: 1, host: \"mongo2:30001\", priority: 1 },
+            { _id: 2, host: \"mongo3:30002\", priority: 1 }
+          ]
+        });
+      ' &&
+      echo 'Replica Set initialized!'"
+
+networks:
+  mongo-net:
+    driver: bridge
