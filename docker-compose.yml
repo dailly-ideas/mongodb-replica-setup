@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   mongo1:
     build:
@@ -57,21 +56,38 @@ services:
       - mongo3
     networks:
       - mongo-net
+    restart: "no"
     entrypoint: >
       bash -c "
-      echo 'Waiting 20s for MongoDB nodes to start...' &&
-      sleep 20 &&
+      echo 'Waiting 30s for MongoDB nodes to start...' &&
+      sleep 30 &&
+      echo 'Initializing replica set...' &&
       mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --eval '
         rs.initiate({
           _id: \"rs0\",
           members: [
-            { _id: 0, host: \"mongo1:30000\", priority: 10 },
-            { _id: 1, host: \"mongo2:30001\", priority: 1 },
-            { _id: 2, host: \"mongo3:30002\", priority: 1 }
+            { _id: 0, host: \"mongo1:27017\", priority: 10 },
+            { _id: 1, host: \"mongo2:27017\", priority: 1 },
+            { _id: 2, host: \"mongo3:27017\", priority: 1 }
           ]
         });
+        print(\"Replica set initialization command sent!\");
       ' &&
-      echo 'Replica Set initialized!'"
+      echo 'Waiting 20s for replica set to stabilize...' &&
+      sleep 20 &&
+      echo 'Checking final status...' &&
+      mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --eval '
+        try {
+          var status = rs.status();
+          print(\"=== Final Replica Set Status ===\");
+          status.members.forEach(function(member) {
+            print(member.name + \": \" + member.stateStr);
+          });
+        } catch (e) {
+          print(\"Status check failed: \" + e.message);
+          print(\"This is normal during initialization. Please wait a few more minutes.\");
+        }
+      '"
 
 networks:
   mongo-net:
