@@ -1,4 +1,5 @@
 version: "3.8"
+
 services:
   mongo1:
     build:
@@ -15,6 +16,12 @@ services:
     networks:
       - mongo-net
     command: mongod --replSet rs0 --auth --keyFile /etc/mongodb.keyfile --bind_ip_all
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   mongo2:
     build:
@@ -31,6 +38,12 @@ services:
     networks:
       - mongo-net
     command: mongod --replSet rs0 --auth --keyFile /etc/mongodb.keyfile --bind_ip_all
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   mongo3:
     build:
@@ -47,22 +60,30 @@ services:
     networks:
       - mongo-net
     command: mongod --replSet rs0 --auth --keyFile /etc/mongodb.keyfile --bind_ip_all
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   mongo-init:
     image: mongo:7.0
     depends_on:
-      - mongo1
-      - mongo2
-      - mongo3
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo3:
+        condition: service_healthy
     networks:
       - mongo-net
-    restart: "no"
+    ports:
+      - "30003:27017"
     entrypoint: >
       bash -c "
-      echo 'Waiting 30s for MongoDB nodes to start...' &&
-      sleep 30 &&
-      echo 'Initializing replica set...' &&
-      mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --eval '
+      echo 'Initializing MongoDB Replica Set...' &&
+      mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --retryWrites=false --eval '
         rs.initiate({
           _id: \"rs0\",
           members: [
@@ -71,22 +92,15 @@ services:
             { _id: 2, host: \"mongo3:27017\", priority: 1 }
           ]
         });
-        print(\"Replica set initialization command sent!\");
       ' &&
-      echo 'Waiting 20s for replica set to stabilize...' &&
-      sleep 20 &&
-      echo 'Checking final status...' &&
-      mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --eval '
-        try {
-          var status = rs.status();
-          print(\"=== Final Replica Set Status ===\");
-          status.members.forEach(function(member) {
-            print(member.name + \": \" + member.stateStr);
-          });
-        } catch (e) {
-          print(\"Status check failed: \" + e.message);
-          print(\"This is normal during initialization. Please wait a few more minutes.\");
+      echo 'Replica Set initialized!' &&
+      echo 'Waiting for replica set to be ready...' &&
+      mongosh --host mongo1:27017 -u admin -p Admin123 --authenticationDatabase admin --retryWrites=false --eval '
+        while(rs.status().ok !== 1) {
+          print(\"Waiting for replica set...\");
+          sleep(1000);
         }
+        print(\"Replica set is ready!\");
       '"
 
 networks:
